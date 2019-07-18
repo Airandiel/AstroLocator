@@ -29,13 +29,6 @@ class Star():
             self.y = y
             self.bright = bright
 
-    @staticmethod
-    def list(list):
-        list1 = []
-        for i in range(len(list)):
-            list1.append(Star(cell=list[i]))
-        return np.array(list1)
-
     def dist(self, other):
         return pow(self.x - other.x, 2) + pow(self.y - other.y, 2)
 
@@ -65,35 +58,24 @@ class Star():
             return first, third
 
     @staticmethod
-    def angles_convex_hull(Stars):
+    def angles_convex_hull(list):
         # return angles of hull
-        # if isinstance(Stars, list) or isinstance(Stars, tuple):
-        #     if len(Stars[0][0]) > 1:
-        #         points = np.array([elem[0] for elem in Stars])
-        #     else:
-        #         points = np.array(Stars)
-        # else:
-        points = np.array([[elem.x, elem.y] for elem in Stars])
-
+        points = np.array([list.x, list.y])
         hull = ConvexHull(points)
-        end = len(hull.vertices)
+        end = len(hull)
         one = np.concatenate((hull.vertices[end - 1:end], hull.vertices[0:end - 1]))
         two = np.concatenate((hull.vertices[1:end], hull.vertices[0:1]))
-        # one = np.concatenate((hull.vertices[end:end + 1], hull.vertices[0:end]))
-        # two = np.concatenate((hull.vertices[1:end + 1], hull.vertices[0:1]))
         diff = points[one] - points[hull.vertices]
         one = np.hypot(diff[:, 0], diff[:, 1])
-        maxIndex = np.argmax(one)
+        maxValue, maxIndex = max(one)
         diff = points[two] - points[hull.vertices]
         two = np.hypot(diff[:, 0], diff[:, 1])
-        angles = np.arctan(one / two)
+        angles = np.arctan(one/two)
         if maxIndex != 0:
             angles = np.concatenate((angles[maxIndex:len(angles)], angles[0:maxIndex]))
         return angles
 
-    @staticmethod
-    def make_array(array):
-        return [Star(cell=elem) for elem in array]
+
 
 
 class ProcessData:
@@ -105,17 +87,14 @@ class ProcessData:
 
         # calculate distance relations because angles would take to much time
         # ml - middle to longest, sl - shortest to longest
-        polygon1 = [Star(cell=elem) for elem in starsArray[0:3]]
-        originalAngles = Star.angles_convex_hull(polygon1)
 
         ml, sl = Star.dist_ratio(first, second, third)
-        first, second = Star.sort_three_by_distances(first, second, third)
+        first, second = Star.sort_by_distances(first, second, third)
         ### READ DATABASE
         file = open(databasePath, 'r')
         databaseRaw = self.read_remove_unimportant_columns_and_convert(file)
-        databaseRaw1 = self.reduce_too_dark_and_convert_magnitude(copy.copy(databaseRaw), magThreshold=10)
-        databaseRaw1 = np.array(databaseRaw1)
-        checked = []
+        databaseRawPass = copy.copy(databaseRaw)
+        databaseRawPass[:, 3] = pow(10, (-14.18 - databaseRawPass[:, 3]) / 2.5)
         for mag in range(10, 65, 5):
             database = self.reduce_too_dark_and_convert_magnitude(copy.copy(databaseRaw), magThreshold=float(mag / 10))
             if len(database) > 0:
@@ -154,50 +133,33 @@ class ProcessData:
                             longests = min(cml, ml) / max(cml, ml)
                             shortests = min(csl, sl) / max(csl, sl)
                             stat = longests * shortests
-
-                            # polygon2 = [fc, sc, tc]
-                            # stat = self.calculate_similarity_of_polygons(originalAngles, polygon2)
                             if stat > 0.99:
-                                if tc.id not in checked:
-                                    arr = sorted([fc, sc, tc], key=lambda x: x.bright)
-                                    ratiofs1 = first.bright / second.bright
-                                    ratiofs2 = arr[2].bright / arr[1].bright
-                                    ratiost1 = second.bright / third.bright
-                                    ratiost2 = arr[1].bright / arr[0].bright
-                                    ratioft1 = first.bright / third.bright
-                                    ratioft2 = arr[2].bright / arr[0].bright
-                                    ratiofs = min(ratiofs1, ratiofs2) / max(ratiofs1, ratiofs2)
-                                    ratiost = min(ratiost1, ratiost2) / max(ratiost1, ratiost2)
-                                    ratioft = min(ratioft1, ratioft2) / max(ratioft1, ratioft2)
-
-                                    if ratiofs * ratiost * ratioft > 0.90:
-                                        polygon = [Star(cell=elem) for elem in starsArray[0:4]]
-                                        starList = [fc.id, sc.id, tc.id]  # fitting stars
-                                        polygon2 = [fc, sc, tc]
-                                        checked.append(fc.id) # append to checked stars
-                                        checked.append(sc.id)
-                                        checked.append(tc.id)
+                                arr = sorted([fc, sc, tc], key=lambda x: x.bright)
+                                ratiofs1 = first.bright / second.bright
+                                ratiofs2 = arr[2].bright / arr[1].bright
+                                ratiost1 = second.bright / third.bright
+                                ratiost2 = arr[1].bright / arr[0].bright
+                                ratioft1 = first.bright / third.bright
+                                ratioft2 = arr[2].bright / arr[0].bright
+                                ratiofs = min(ratiofs1, ratiofs2) / max(ratiofs1, ratiofs2)
+                                ratiost = min(ratiost1, ratiost2) / max(ratiost1, ratiost2)
+                                ratioft = min(ratioft1, ratioft2) / max(ratioft1, ratioft2)
+                                if ratiofs * ratiost * ratioft > 0.90:
+                                    fsc, ssc = Star.sort_by_distances(fc, sc, tc)
+                                    starList = [fc.id, sc.id, tc.id]
+                                    if self.find_next(first, second, Star(cell=starsArray[3]), starsArray, 3, fsc, ssc,
+                                                      databaseRawPass, starList):
+                                        stats.append(starList)
                                         print(starList)
-                                        if self.find_next(polygon, starsArray, 3, polygon2, databaseRaw1, starList):
-                                            stats.append(starList)
-                                            print(starList)
-                                            return starList
-
-                                # polygon2 = [fc, sc, tc]
-                                # polygon2 = [[[fc.x, fc.y], fc.id], [[sc.x, sc.y], sc.id], [[tc.x, tc.y], tc.id]]
-
-                                # if self.find_next(first, second, Star(cell=starsArray[3]), starsArray, 3, fsc, ssc,
-                                #                  databaseRawPass, starList):
-
-                                # stats.append([fc.id, sc.id, tc.id])
-                                # print([fc.id, sc.id, tc.id])
+                                    # stats.append([fc.id, sc.id, tc.id])
+                                    # print([fc.id, sc.id, tc.id])
                     counter += 1
                 # print(stats)
         return stats
 
     # returns True if at least five stars are correct, False, other way
     def find_next(self, polygon1, starArray, noOfChecked, polygon2, databaseRaw, starsList, n=5000):
-        if noOfChecked == 5:
+        if noOfChecked == 6:
             return True
 
         originalAngles = Star.angles_convex_hull(polygon1)
@@ -219,25 +181,24 @@ class ProcessData:
             database = databaseRaw[index - n:index + n]
         for child in database:
             tsc = Star(cell=child)
-            # cml, csl = Star.dist_ratio(fsc, ssc, tsc)
-            # longests = min(cml, ml) / max(cml, ml)
-            # shortests = min(csl, sl) / max(csl, sl)
+            #cml, csl = Star.dist_ratio(fsc, ssc, tsc)
+            #longests = min(cml, ml) / max(cml, ml)
+            #shortests = min(csl, sl) / max(csl, sl)
 
             stat = self.calculate_similarity_of_polygons(originalAngles, np.concatenate((polygon2, [tsc])))
             if stat < 0.1:
-                # fsc, ssc = Star.sort_by_distances(fsc, ssc, tsc)
-                # result = self.find_next(fs, ss, Star(cell=starArray[noOfChecked + 1]), starArray, noOfChecked + 1, fsc,
+                #fsc, ssc = Star.sort_by_distances(fsc, ssc, tsc)
+                #result = self.find_next(fs, ss, Star(cell=starArray[noOfChecked + 1]), starArray, noOfChecked + 1, fsc,
                 #                        ssc,
                 #                        databaseRaw,
                 #                        starsList)
-                newImagePolygon = np.concatenate((polygon1, [Star(cell=starArray[noOfChecked + 1])]))
+                newAngles = np.concatenate((originalAngles, [Star(cell=starArray[noOfChecked+1])]))
                 newPolygon = np.concatenate((polygon2, [tsc]))
-                result = self.find_next(newImagePolygon, starArray, noOfChecked + 1, newPolygon,
-                                                   databaseRaw,
-                                                   starsList)
+                result = self.find_next(newAngles, starArray, noOfChecked + 1, newPolygon,
+                                       databaseRaw,
+                                       starsList)
                 if result:
                     starsList.append(tsc.id)
-                    print(tsc.id)
                     return True
         return False
 
@@ -245,15 +206,16 @@ class ProcessData:
         # compare angles in convex hull
         angles = Star.angles_convex_hull(polygon2)
         if len(anglesPolygon1) != len(angles):
-            return 1
+            return 0
         else:
-            reversedList = np.concatenate(([anglesPolygon1[0]], anglesPolygon1[len(anglesPolygon1):0:-1]))
-            return min(sum(abs(angles - anglesPolygon1)), sum(abs(angles - reversedList)))
+            return sum(angles - anglesPolygon1)
+
+
 
     def read_and_process_database(self, databasePath):
         file = open(databasePath, 'r')
         database = self.read_remove_unimportant_columns_and_convert(file)
-        database = self.reduce_too_dark_and_convert_magnitude(database, magThreshold=10)
+        database = self.reduce_too_dark_and_convert_magnitude(database)
         return database
 
     def read_remove_unimportant_columns_and_convert(self, file):
@@ -317,7 +279,8 @@ class ProcessData:
         # print(max(database[:, 1]))
         return self.export_stars_to_print(database, id)
 
-# find_most_similar(StarImageProcess().find_stars())
+
+find_most_similar(StarImageProcess().find_stars())
 # find_most_similar([[[774, 267], 81.5], [[827, 54], 26.0], [[398, 404], 25.5], [[388, 240], 22.5], [[771, 157], 16.5],
 #                   [[770, 362], 14.0], [[226, 184], 14.0], [[689, 446], 13.5], [[875, 451], 12.0], [[206, 367], 12.0],
 #                   [[433, 170], 12.0], [[384, 314], 11.0], [[749, 160], 10.0], [[298, 310], 8.5], [[839, 355], 6.0],
